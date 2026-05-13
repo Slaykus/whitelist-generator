@@ -1,0 +1,75 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.4.15/schema.json",
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "lineWidth": 80
+  },
+  "assist": { "actions": { "source": { "organizeImports": "on" } } },
+  "javascript": {
+    "formatter": {
+      "trailingCommas": "es5",
+      "quoteStyle": "single",
+      "arrowParentheses": "asNeeded",
+      "semicolons": "always"
+    }
+  },
+  "json": {
+    "formatter": {
+      "trailingCommas": "none"
+    }
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+      "suspicious": {
+        "noExplicitAny": "off",
+        "noUnsafeDeclarationMerging": "off",
+        "noMisleadingInstantiator": "off",
+        "noEmptyInterface": "off",
+        "noConfusingVoidType": "off",
+        "noThenProperty": "off"
+      },
+      "style": {
+        "noUnusedTemplateLiteral": "off",
+        "noParameterAssign": "off",
+        "noNonNullAssertion": "off",
+        "useTemplate": "off",
+        "noUselessElse": "off"
+      },
+      "correctness": {
+        "noUnusedImports": {
+          "level": "error",
+          "fix": "safe",
+          "options": {}
+        },
+        "noUnusedVariables": "warn"
+      },
+      "complexity": {
+        "noUselessConstructor": "off",
+        "noBannedTypes": "off",
+        "useArrowFunction": "off",
+        "useLiteralKeys": {
+          "fix": "unsafe",
+          "level": "error",
+          "options": {}
+        }
+      },
+      "performance": {
+        "noDelete": "off"
+      }
+    }
+  },
+  "files": {
+    "includes": ["**/*.ts", "**/*.mts", "**/*.cts"]
+  },
+  "overrides": [
+    {
+      "includes": ["generated/**", "node_modules", "dist", "out", "prisma"],
+      "linter": {
+        "enabled": false
+      }
+    }
+  ]
+}

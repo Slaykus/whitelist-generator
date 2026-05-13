@@ -1,0 +1,37 @@
+{
+	"name": "@mishkat/whitelist-generator",
+	"version": "1.0.0",
+	"author": "Mishkat <github.com/mishkatik>",
+	"homepage": "https://github.com/mishkatik/whitelist-generator",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/mishkatik/whitelist-generator"
+	},
+	"description": "Generator for XRay Whitelist Subscriptions of public vless links",
+	"module": "index.ts",
+	"type": "module",
+	"private": true,
+	"scripts": {
+		"start": "bun run src/main.ts",
+		"dev": "NODE_ENV=development bun --watch run src/main.ts",
+		"build": "bun build --compile --minify --sourcemap src/main.ts --outfile=out/whitelist-generator",
+		"format": "biome check --write .",
+		"format:check": "biome check .",
+		"lint": "biome lint --write .",
+		"lint:check": "biome lint ."
+	},
+	"devDependencies": {
+		"@biomejs/biome": "2.4.15",
+		"@types/bun": "latest"
+	},
+	"peerDependencies": {
+		"typescript": "^6.0.3"
+	},
+	"dependencies": {
+		"@mishkat/remnawave-sdk": "^1.4.1",
+		"croner": "^10.0.1",
+		"ip-num": "^1.5.2",
+		"ky": "^2.0.2",
+		"zod": "^4.4.3"
+	}
+}
