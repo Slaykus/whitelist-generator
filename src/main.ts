@@ -3,6 +3,7 @@ import {
   fetchVlessList,
   filterByKnownSubnet,
   filterByType,
+  generateMultiConfig,
   generateOutbounds,
   logger,
   matchAllHosts,
@@ -43,6 +44,13 @@ async function run(): Promise<void> {
   const outputPath = 'xray-client.json';
   await Bun.write(outputPath, JSON.stringify(config, null, '\t'));
   logger.info('Config saved', { path: outputPath });
+
+  const multiPath = 'xray-multi.json';
+  await Bun.write(
+    multiPath,
+    JSON.stringify(generateMultiConfig(outbounds), null, '\t')
+  );
+  logger.info('Multi-config saved', { path: multiPath });
 
   await syncConfig(config, env);
 }

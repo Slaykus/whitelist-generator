@@ -115,6 +115,22 @@ function groupByBalancerTag(
   return grouped;
 }
 
+/** Single entry in the Xray JSON multi-config array format */
+export interface XrayMultiConfigEntry {
+  remarks: string;
+  outbounds: [XrayVlessOutbound];
+}
+
+/**
+ * Convert a flat outbounds list into the Xray JSON-array multi-config format.
+ * Each entry wraps one outbound, using its tag as the remarks field.
+ */
+export function generateMultiConfig(
+  outbounds: XrayVlessOutbound[]
+): XrayMultiConfigEntry[] {
+  return outbounds.map(ob => ({ remarks: ob.tag, outbounds: [ob] }));
+}
+
 /**
  * Generate Xray vless outbounds from matched results.
  * Results are grouped by balancerTag in the order defined by groupOrder,
