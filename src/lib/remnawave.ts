@@ -12,8 +12,26 @@ export function createRemnawaveClient(env: Env): RemnawaveSDK {
 }
 
 /**
- * Push the generated Xray config to a Remnawave config profile.
- * Requires SYNC_ENABLED=true and related env vars.
+ * Fetch the remote template, replace its outbounds with the generated ones,
+ * and return the merged config.
+ */
+async function mergeOutboundsIntoRemoteTemplate(
+  sdk: RemnawaveSDK,
+  templateUuid: string,
+  newOutbounds: Record<string, unknown>[]
+): Promise<Record<string, unknown>> {
+  const template = await sdk.subscriptionTemplate.getTemplate(templateUuid);
+  const remote = (template?.templateJson ?? {}) as Record<string, unknown>;
+
+  logger.info('Fetched remote template for merge', { templateUuid });
+
+  return { ...remote, outbounds: newOutbounds };
+}
+
+/**
+ * Push the generated Xray config to a Remnawave subscription template.
+ * - OVERWRITE_FULL_CONFIG=true  → replace the whole template JSON
+ * - OVERWRITE_FULL_CONFIG=false → fetch remote template, replace outbounds only
  */
 export async function syncConfig(config: XrayConfig, env: Env): Promise<void> {
   if (!env.SYNC_ENABLED) {
@@ -27,12 +45,26 @@ export async function syncConfig(config: XrayConfig, env: Env): Promise<void> {
   logger.info('Syncing config to Remnawave', {
     url: env.REMNAWAVE_URL,
     templateUuid,
+    mode: env.OVERWRITE_FULL_CONFIG ? 'overwrite' : 'merge',
   });
 
   try {
+    let payload: Record<string, unknown>;
+
+    if (env.OVERWRITE_FULL_CONFIG) {
+      payload = config as unknown as Record<string, unknown>;
+    } else {
+      const newOutbounds = config.outbounds as Record<string, unknown>[];
+      payload = await mergeOutboundsIntoRemoteTemplate(
+        sdk,
+        templateUuid,
+        newOutbounds
+      );
+    }
+
     await sdk.subscriptionTemplate.updateTemplate({
       uuid: templateUuid,
-      templateJson: config as unknown as Record<string, unknown>,
+      templateJson: payload,
     });
 
     logger.info('Remnawave sync complete', { templateUuid });

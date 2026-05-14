@@ -65,6 +65,7 @@ cp .env.sample .env
 | `REMNAWAVE_URL` | if sync | — | Remnawave panel URL |
 | `REMNAWAVE_API_KEY` | if sync | — | Remnawave API key |
 | `REMNAWAVE_TEMPLATE_UUID` | if sync | — | UUID of the subscription template to update |
+| `OVERWRITE_FULL_CONFIG` | no | `false` | `true` — replace entire template; `false` — fetch remote template and replace outbounds only |
 
 ## Usage
 

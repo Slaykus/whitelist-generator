@@ -3,7 +3,10 @@ import { z } from 'zod';
 const envSchema = z
   .object({
     /** Enable syncing the generated config to Remnawave */
-    SYNC_ENABLED: z.coerce.boolean().default(false),
+    SYNC_ENABLED: z
+      .string()
+      .transform(v => v.toLowerCase() === 'true')
+      .default(false),
 
     /** Base URL of the Remnawave panel (required when sync is enabled) */
     REMNAWAVE_URL: z.url().optional(),
@@ -13,6 +16,15 @@ const envSchema = z
 
     /** UUID of the template to update (required when sync is enabled) */
     REMNAWAVE_TEMPLATE_UUID: z.uuid().optional(),
+
+    /**
+     * When true, the entire template is replaced with the generated config.
+     * When false (default), outbounds are merged into the existing remote template.
+     */
+    OVERWRITE_FULL_CONFIG: z
+      .string()
+      .transform(v => v.toLowerCase() === 'true')
+      .default(false),
   })
   .superRefine((data, ctx) => {
     if (!data.SYNC_ENABLED) return;
@@ -34,7 +46,7 @@ const envSchema = z
     }
   });
 
-const parsed = envSchema.safeParse(process.env);
+const parsed = envSchema.safeParse(Bun.env);
 
 if (!parsed.success) {
   const errors = parsed.error.issues
