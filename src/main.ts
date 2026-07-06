@@ -144,7 +144,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  new Cron('@hourly', { name: 'vless-sync', catch: false }, async () => {
+  new Cron(env.SCHEDULE_CRON, { name: 'vless-sync', catch: false }, async () => {
     try {
       await run();
     } catch (err) {
@@ -152,7 +152,7 @@ async function main(): Promise<void> {
     }
   });
 
-  logger.info('Scheduler started', { schedule: '@hourly' });
+  logger.info('Scheduler started', { schedule: env.SCHEDULE_CRON });
 }
 
 void main().catch((err: unknown) => {

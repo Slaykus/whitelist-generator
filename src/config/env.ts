@@ -26,6 +26,9 @@ const envSchema = z
      */
     OVERWRITE_FULL_CONFIG: bool(false),
 
+    /** Cron schedule for periodic re-runs when sync is enabled */
+    SCHEDULE_CRON: z.string().default('*/30 * * * *'),
+
     /** Enable speed/latency testing and keep only the fastest servers */
     TEST_ENABLED: bool(false),
 
@@ -51,7 +54,7 @@ const envSchema = z
     TEST_TIMEOUT_MS: z.coerce.number().int().min(1000).default(20000),
 
     /** Minimum download speed in Mbps to keep a server (0 = no floor) */
-    TEST_MIN_SPEED_MBPS: z.coerce.number().min(0).default(0),
+    TEST_MIN_SPEED_MBPS: z.coerce.number().min(0).default(40),
 
     /** Maximum acceptable latency in ms (0 = no cap) */
     TEST_MAX_LATENCY_MS: z.coerce.number().int().min(0).default(0),
