@@ -46,3 +46,19 @@ export interface MatchResult {
 }
 
 export type LogLevel = 'DEBUG' | 'INFO' | 'WARN' | 'ERROR';
+
+/** Result of speed/latency testing one candidate outbound through xray-core */
+export interface SpeedTestResult {
+  /** Outbound tag (e.g. "YD", "SEL-3") */
+  tag: string;
+  address: string;
+  port: number;
+  /** Whether the server responded successfully through the proxy */
+  available: boolean;
+  /** Time-to-first-byte in ms through the proxy; -1 if not measured */
+  latencyMs: number;
+  /** Download throughput in bytes/sec; 0 if not measured */
+  speedBytesPerSec: number;
+  /** Bytes actually downloaded during the speed test */
+  downloadedBytes: number;
+}

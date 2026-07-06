@@ -1,0 +1,12 @@
+services:
+  whitelist-generator:
+    build: .
+    image: whitelist-generator:local
+    container_name: whitelist-generator
+    working_dir: /app
+    volumes:
+      - ./:/app
+    env_file: .env
+    # One-shot when SYNC_ENABLED=false. Runs hourly cron when SYNC_ENABLED=true.
+    command: sh -c "bun install --frozen-lockfile && bun start"
+    restart: "no"

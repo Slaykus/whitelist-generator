@@ -1,12 +1,15 @@
 import { z } from 'zod';
 
+const bool = (def: boolean) =>
+  z
+    .string()
+    .transform(v => v.toLowerCase() === 'true')
+    .default(def);
+
 const envSchema = z
   .object({
     /** Enable syncing the generated config to Remnawave */
-    SYNC_ENABLED: z
-      .string()
-      .transform(v => v.toLowerCase() === 'true')
-      .default(false),
+    SYNC_ENABLED: bool(false),
 
     /** Base URL of the Remnawave panel (required when sync is enabled) */
     REMNAWAVE_URL: z.url().optional(),
@@ -21,10 +24,43 @@ const envSchema = z
      * When true, the entire template is replaced with the generated config.
      * When false (default), outbounds are merged into the existing remote template.
      */
-    OVERWRITE_FULL_CONFIG: z
-      .string()
-      .transform(v => v.toLowerCase() === 'true')
-      .default(false),
+    OVERWRITE_FULL_CONFIG: bool(false),
+
+    /** Enable speed/latency testing and keep only the fastest servers */
+    TEST_ENABLED: bool(false),
+
+    /** How many of the fastest servers to keep (0 = keep all passing) */
+    TEST_TOP_N: z.coerce.number().int().min(0).default(10),
+
+    /** Cap the number of candidates actually tested (0 = test all) */
+    TEST_LIMIT: z.coerce.number().int().min(0).default(0),
+
+    /** Number of servers tested in parallel */
+    TEST_CONCURRENCY: z.coerce.number().int().min(1).default(5),
+
+    /** First local SOCKS port used for tests (each candidate gets basePort+index) */
+    TEST_BASE_PORT: z.coerce.number().int().min(1024).default(11800),
+
+    /** URL used to check availability + latency */
+    TEST_LATENCY_URL: z.url().default('https://www.gstatic.com/generate_204'),
+
+    /** URL used to measure download throughput */
+    TEST_DOWNLOAD_URL: z.url().default('https://speed.cloudflare.com/__down?bytes=20000000'),
+
+    /** Per-request timeout in ms for the test curls */
+    TEST_TIMEOUT_MS: z.coerce.number().int().min(1000).default(20000),
+
+    /** Minimum download speed in Mbps to keep a server (0 = no floor) */
+    TEST_MIN_SPEED_MBPS: z.coerce.number().min(0).default(0),
+
+    /** Maximum acceptable latency in ms (0 = no cap) */
+    TEST_MAX_LATENCY_MS: z.coerce.number().int().min(0).default(0),
+
+    /** Path to xray-core binary used by the tester */
+    XRAY_BIN: z.string().default('xray'),
+
+    /** Where to write the full ranked test report */
+    TEST_RESULTS_PATH: z.string().default('tested-results.json'),
   })
   .superRefine((data, ctx) => {
     if (!data.SYNC_ENABLED) return;
