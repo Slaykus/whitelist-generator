@@ -62,3 +62,9 @@ export interface SpeedTestResult {
   /** Bytes actually downloaded during the speed test */
   downloadedBytes: number;
 }
+
+/** A selected server: its outbound plus the metrics from its last full test */
+export interface SelectedServer {
+  result: SpeedTestResult;
+  outbound: import('./xray').XrayVlessOutbound;
+}

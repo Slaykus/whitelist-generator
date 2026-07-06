@@ -14,6 +14,8 @@ export interface TesterOptions {
   downloadUrl: string;
   /** Per-request timeout in ms */
   timeoutMs: number;
+  /** Measure download throughput too (false = availability + latency only) */
+  measureSpeed?: boolean;
 }
 
 interface CurlResult {
@@ -54,6 +56,10 @@ async function measure(
   const latencyMs = Math.round(Number(ttfbStr) * 1000);
   if (!(httpCode >= 200 && httpCode < 400)) {
     return { available: false, latencyMs };
+  }
+
+  if (opts.measureSpeed === false) {
+    return { available: true, latencyMs, speedBytesPerSec: 0, downloadedBytes: 0 };
   }
 
   const spd = await curlThroughProxy([

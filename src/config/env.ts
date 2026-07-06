@@ -26,8 +26,11 @@ const envSchema = z
      */
     OVERWRITE_FULL_CONFIG: bool(false),
 
-    /** Cron schedule for periodic re-runs when sync is enabled */
+    /** Cron for the cheap light re-check (availability + latency only) */
     SCHEDULE_CRON: z.string().default('*/30 * * * *'),
+
+    /** Cron for the full speed re-test + re-selection (heavier) */
+    FULL_TEST_CRON: z.string().default('0 */3 * * *'),
 
     /** Enable speed/latency testing and keep only the fastest servers */
     TEST_ENABLED: bool(false),
@@ -64,6 +67,9 @@ const envSchema = z
 
     /** Where to write the full ranked test report */
     TEST_RESULTS_PATH: z.string().default('tested-results.json'),
+
+    /** Where to persist the currently selected servers between runs */
+    SELECTED_STATE_PATH: z.string().default('selected.json'),
   })
   .superRefine((data, ctx) => {
     if (!data.SYNC_ENABLED) return;

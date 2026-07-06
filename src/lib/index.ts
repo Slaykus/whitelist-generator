@@ -4,6 +4,7 @@ export * from './logger';
 export * from './ranker';
 export * from './remnawave';
 export * from './speed-tester';
+export * from './state';
 export * from './vless-filter';
 export * from './vless-parser';
 export * from './xray-generator';
