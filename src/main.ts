@@ -24,6 +24,17 @@ import type {
 } from '@types';
 import { Cron } from 'croner';
 
+/** In-place Fisher-Yates shuffle (returns a new array) so TEST_LIMIT samples
+ * a different random subset of the pool each run instead of always the first N. */
+function shuffle<T>(arr: readonly T[]): T[] {
+  const out = [...arr];
+  for (let i = out.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j]!, out[i]!];
+  }
+  return out;
+}
+
 /** Build the client config from a set of outbounds, write artifacts, sync */
 async function buildAndSync(outbounds: XrayVlessOutbound[]): Promise<void> {
   const config: XrayConfig = {
@@ -93,7 +104,7 @@ async function runFull(): Promise<void> {
 
   if (env.TEST_ENABLED) {
     const pool =
-      env.TEST_LIMIT > 0 ? candidates.slice(0, env.TEST_LIMIT) : candidates;
+      env.TEST_LIMIT > 0 ? shuffle(candidates).slice(0, env.TEST_LIMIT) : candidates;
 
     logger.info('Speed testing candidates', {
       count: pool.length,
