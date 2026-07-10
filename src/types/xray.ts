@@ -39,13 +39,20 @@ export interface XrayTlsSettings {
   fingerprint?: string;
 }
 
+export interface XrayXhttpSettings {
+  path?: string;
+  host?: string;
+  mode?: string;
+}
+
 export interface XrayStreamSettings {
-  network: 'ws' | 'tcp' | 'grpc';
+  network: 'ws' | 'tcp' | 'grpc' | 'xhttp';
   security: 'reality' | 'tls' | 'none';
   wsSettings?: XrayWsSettings;
   /** Empty object for plain TCP (no HTTP header obfuscation) */
   tcpSettings?: Record<string, never>;
   grpcSettings?: XrayGrpcSettings;
+  xhttpSettings?: XrayXhttpSettings;
   realitySettings?: XrayRealitySettings;
   tlsSettings?: XrayTlsSettings;
 }

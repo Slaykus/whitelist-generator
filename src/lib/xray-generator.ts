@@ -9,9 +9,10 @@ import type {
   XrayVlessOutbound,
   XrayVlessSettings,
   XrayWsSettings,
+  XrayXhttpSettings,
 } from '@types';
 
-const SUPPORTED_TRANSPORTS = new Set(['ws', 'tcp', 'grpc']);
+const SUPPORTED_TRANSPORTS = new Set(['ws', 'tcp', 'grpc', 'xhttp']);
 
 /** Build the vless protocol settings block */
 function buildVlessSettings(entry: VlessEntry): XrayVlessSettings {
@@ -51,6 +52,13 @@ function buildTransportSettings(
       if (entry.authority) grpc.authority = entry.authority;
       return { grpcSettings: grpc };
     }
+    case 'xhttp': {
+      const xhttp: XrayXhttpSettings = {};
+      if (entry.path) xhttp.path = entry.path;
+      if (entry.host) xhttp.host = entry.host;
+      if (entry.mode) xhttp.mode = entry.mode;
+      return { xhttpSettings: xhttp };
+    }
     default:
       return { tcpSettings: {} };
   }
@@ -81,7 +89,7 @@ function buildSecuritySettings(entry: VlessEntry): Partial<XrayStreamSettings> {
 /** Build the full streamSettings block */
 function buildStreamSettings(entry: VlessEntry): XrayStreamSettings {
   return {
-    network: entry.type as 'ws' | 'tcp' | 'grpc',
+    network: entry.type as 'ws' | 'tcp' | 'grpc' | 'xhttp',
     ...buildTransportSettings(entry),
     ...buildSecuritySettings(entry),
   } as XrayStreamSettings;
