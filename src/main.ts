@@ -3,6 +3,7 @@ import {
   fetchVlessList,
   filterByKnownSubnet,
   filterByType,
+  filterUniversal,
   generateMultiConfig,
   generateOutbounds,
   loadSelected,
@@ -123,8 +124,12 @@ async function runFull(): Promise<void> {
       )
     );
 
+    // Over-sample the fast pool so the universality filter still leaves TEST_TOP_N.
+    const oversample = env.BSBORD_ENABLED
+      ? env.TEST_TOP_N * env.BSBORD_OVERSAMPLE
+      : env.TEST_TOP_N;
     const ranked = rankResults(results, {
-      topN: env.TEST_TOP_N,
+      topN: oversample,
       minSpeedMbps: env.TEST_MIN_SPEED_MBPS,
       maxLatencyMs: env.TEST_MAX_LATENCY_MS,
     });
@@ -132,19 +137,33 @@ async function runFull(): Promise<void> {
     logger.info('Speed test complete', {
       tested: results.length,
       available: results.filter(r => r.available).length,
-      selected: ranked.length,
+      fastPool: ranked.length,
       fastestMbps: sorted[0]
         ? Number(toMbps(sorted[0].speedBytesPerSec).toFixed(1))
         : 0,
     });
 
     const byTag = new Map(candidates.map(o => [o.tag, o]));
-    selected = ranked
+    let fastPool: SelectedServer[] = ranked
       .map(r => {
         const outbound = byTag.get(r.tag);
         return outbound ? { result: r, outbound } : null;
       })
       .filter((s): s is SelectedServer => s !== null);
+
+    // Keep only servers that work across all live Russian operators (bsbord).
+    if (env.BSBORD_ENABLED && env.BSBORD_API_KEY) {
+      fastPool = await filterUniversal(fastPool, {
+        apiUrl: env.BSBORD_API_URL,
+        apiKey: env.BSBORD_API_KEY,
+        dpi: env.BSBORD_DPI,
+        minOperators: env.BSBORD_MIN_OPERATORS,
+        cacheTtlMs: env.BSBORD_CACHE_TTL_HOURS * 3_600_000,
+        cachePath: env.BSBORD_CACHE_PATH,
+      });
+    }
+
+    selected = fastPool.slice(0, env.TEST_TOP_N);
 
     if (selected.length === 0) {
       logger.warn('No servers passed testing — keeping all candidates');

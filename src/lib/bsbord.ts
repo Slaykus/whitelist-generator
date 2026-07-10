@@ -1,0 +1,171 @@
+import { logger } from '@lib/logger';
+import type { SelectedServer, XrayVlessOutbound } from '@types';
+
+export interface BsbordOptions {
+  apiUrl: string;
+  apiKey: string;
+  /** 'on' = only DPI-active operators (real BS); 'any' = include non-BS */
+  dpi: string;
+  /** Skip filtering if fewer than this many operators are alive (avoid starving the pool) */
+  minOperators: number;
+  cacheTtlMs: number;
+  cachePath: string;
+}
+
+interface Verdict {
+  universal: boolean;
+  checkedAt: string;
+  operators: string[];
+}
+interface CacheFile {
+  verdicts: Record<string, Verdict>;
+}
+
+// API throttle is 1 req/sec (min_interval_sec: 1.0) — add margin.
+const THROTTLE_MS = 1200;
+const BATCH = 10;
+
+const sleep = (ms: number): Promise<void> => new Promise(r => setTimeout(r, ms));
+
+function endpoint(o: XrayVlessOutbound): string {
+  const v = o.settings.vnext[0];
+  return `${v.address}:${v.port}`;
+}
+
+function sniOf(o: XrayVlessOutbound): string | undefined {
+  const ss = o.streamSettings;
+  return ss.realitySettings?.serverName ?? ss.tlsSettings?.serverName ?? undefined;
+}
+
+async function loadCache(path: string): Promise<CacheFile> {
+  const f = Bun.file(path);
+  if (await f.exists()) {
+    try {
+      const d = (await f.json()) as Partial<CacheFile>;
+      if (d.verdicts) return { verdicts: d.verdicts };
+    } catch {
+      /* fall through to empty */
+    }
+  }
+  return { verdicts: {} };
+}
+
+async function aliveOperators(opts: BsbordOptions): Promise<string[]> {
+  const resp = await fetch(`${opts.apiUrl}/operators`, {
+    headers: { Authorization: `Bearer ${opts.apiKey}` },
+  });
+  if (!resp.ok) throw new Error(`operators HTTP ${resp.status}`);
+  const data = (await resp.json()) as {
+    operators?: Array<{ op_key: string; alive: boolean; channel_state?: string }>;
+  };
+  return (data.operators ?? [])
+    .filter(o => o.alive && (opts.dpi === 'any' || o.channel_state === 'DPI_ON'))
+    .map(o => o.op_key);
+}
+
+/** Probe up to 10 servers across operators; returns endpoint -> { op_key -> ok }. */
+async function probeBatch(
+  batch: XrayVlessOutbound[],
+  opts: BsbordOptions
+): Promise<Record<string, Record<string, boolean>>> {
+  const sniHosts = [...new Set(batch.map(sniOf).filter((s): s is string => !!s))];
+  const body = {
+    targets: batch.map(endpoint),
+    probes: { icmp: false, tcp: true, sni: sniHosts.length > 0 },
+    sni_hosts: sniHosts,
+    dpi: opts.dpi,
+  };
+  const resp = await fetch(`${opts.apiUrl}/probe`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${opts.apiKey}`,
+      'Content-Type': 'application/json',
+      'Idempotency-Key': crypto.randomUUID(),
+    },
+    body: JSON.stringify(body),
+  });
+  if (!resp.ok) throw new Error(`probe HTTP ${resp.status}`);
+  const data = (await resp.json()) as {
+    by_target?: Record<string, { by_operator?: Record<string, { ok?: boolean }> }>;
+  };
+  const out: Record<string, Record<string, boolean>> = {};
+  for (const [tgt, td] of Object.entries(data.by_target ?? {})) {
+    const perOp: Record<string, boolean> = {};
+    for (const [op, info] of Object.entries(td.by_operator ?? {})) {
+      perOp[op] = info.ok === true;
+    }
+    out[tgt] = perOp;
+  }
+  return out;
+}
+
+/**
+ * Keep only servers reachable on ALL currently-live operators (tested through
+ * real Russian operator modems). Verdicts are cached per endpoint for cacheTtlMs
+ * so repeat runs don't re-pay. On any API trouble the input is passed through
+ * unchanged (fail-open — never empty the pool because of a checker outage).
+ */
+export async function filterUniversal(
+  servers: SelectedServer[],
+  opts: BsbordOptions
+): Promise<SelectedServer[]> {
+  if (servers.length === 0) return servers;
+
+  let alive: string[];
+  try {
+    alive = await aliveOperators(opts);
+  } catch (e) {
+    logger.warn('bsbord: operators fetch failed — skipping filter', { error: String(e) });
+    return servers;
+  }
+  if (alive.length < opts.minOperators) {
+    logger.warn('bsbord: too few live operators — skipping filter', {
+      alive: alive.length,
+      need: opts.minOperators,
+    });
+    return servers;
+  }
+  logger.info('bsbord: universality filter', {
+    candidates: servers.length,
+    liveOperators: alive.join(','),
+  });
+
+  const cache = await loadCache(opts.cachePath);
+  const now = Date.now();
+  const isFresh = (v?: Verdict): boolean =>
+    !!v && now - new Date(v.checkedAt).getTime() < opts.cacheTtlMs;
+
+  const toProbe = servers.filter(s => !isFresh(cache.verdicts[endpoint(s.outbound)]));
+  logger.info('bsbord: cache state', {
+    cached: servers.length - toProbe.length,
+    toProbe: toProbe.length,
+  });
+
+  for (let i = 0; i < toProbe.length; i += BATCH) {
+    const batch = toProbe.slice(i, i + BATCH).map(s => s.outbound);
+    let res: Record<string, Record<string, boolean>>;
+    try {
+      res = await probeBatch(batch, opts);
+    } catch (e) {
+      logger.error('bsbord: probe batch failed', { error: String(e) });
+      continue;
+    }
+    for (const o of batch) {
+      const perOp = res[endpoint(o)] ?? {};
+      cache.verdicts[endpoint(o)] = {
+        universal: alive.every(op => perOp[op] === true),
+        checkedAt: new Date().toISOString(),
+        operators: alive,
+      };
+    }
+    await Bun.write(opts.cachePath, JSON.stringify(cache, null, '\t'));
+    if (i + BATCH < toProbe.length) await sleep(THROTTLE_MS);
+  }
+
+  const survivors = servers.filter(s => cache.verdicts[endpoint(s.outbound)]?.universal);
+  logger.info('bsbord: filter complete', {
+    universal: survivors.length,
+    dropped: servers.length - survivors.length,
+  });
+  return survivors;
+}

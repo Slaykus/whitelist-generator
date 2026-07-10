@@ -70,6 +70,20 @@ const envSchema = z
 
     /** Where to persist the currently selected servers between runs */
     SELECTED_STATE_PATH: z.string().default('selected.json'),
+
+    /** Enable bsbord operator-universality filter (needs BSBORD_API_KEY) */
+    BSBORD_ENABLED: bool(false),
+    BSBORD_API_KEY: z.string().optional(),
+    BSBORD_API_URL: z.url().default('https://bsbord.com/v1'),
+    /** 'on' = only DPI-active operators (real BS); 'any' = include non-BS */
+    BSBORD_DPI: z.string().default('on'),
+    /** Skip the filter if fewer operators are alive (don't starve the pool) */
+    BSBORD_MIN_OPERATORS: z.coerce.number().int().min(1).default(2),
+    /** Cache a verdict per endpoint for this long, so repeat runs don't re-pay */
+    BSBORD_CACHE_TTL_HOURS: z.coerce.number().min(0).default(24),
+    BSBORD_CACHE_PATH: z.string().default('bsbord-cache.json'),
+    /** Speed-test pool feeding the filter = TEST_TOP_N * this */
+    BSBORD_OVERSAMPLE: z.coerce.number().int().min(1).default(3),
   })
   .superRefine((data, ctx) => {
     if (!data.SYNC_ENABLED) return;
