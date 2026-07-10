@@ -164,13 +164,15 @@ async function runFull(): Promise<void> {
     }
 
     selected = fastPool.slice(0, env.TEST_TOP_N);
-
-    if (selected.length === 0) {
-      logger.warn('No servers passed testing — keeping all candidates');
-      selected = candidates.map(o => ({ result: passthroughResult(o), outbound: o }));
-    }
   } else {
     selected = candidates.map(o => ({ result: passthroughResult(o), outbound: o }));
+  }
+
+  // Never push raw/unverified candidates. If nothing passed, keep whatever is
+  // already live (the previous good selection) instead of shipping dead servers.
+  if (selected.length === 0) {
+    logger.warn('No working servers this run — keeping the previous selection (no sync)');
+    return;
   }
 
   await saveSelected(env.SELECTED_STATE_PATH, selected);
