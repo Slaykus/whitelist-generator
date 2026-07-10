@@ -10,6 +10,8 @@ export interface BsbordOptions {
   minOperators: number;
   cacheTtlMs: number;
   cachePath: string;
+  /** Min fraction of live operators OK to count as universal (1 = all) */
+  minOkRatio: number;
 }
 
 interface Verdict {
@@ -152,8 +154,9 @@ export async function filterUniversal(
     }
     for (const o of batch) {
       const perOp = res[endpoint(o)] ?? {};
+      const okCount = alive.filter(op => perOp[op] === true).length;
       cache.verdicts[endpoint(o)] = {
-        universal: alive.every(op => perOp[op] === true),
+        universal: alive.length > 0 && okCount / alive.length >= opts.minOkRatio,
         checkedAt: new Date().toISOString(),
         operators: alive,
       };

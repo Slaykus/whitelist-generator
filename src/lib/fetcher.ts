@@ -1,17 +1,35 @@
-import { VLESS_LIST_URL } from '@config/constants';
+import { DEFAULT_SOURCE_URLS } from '@config/constants';
 import { logger } from '@lib/logger';
 import ky from 'ky';
 
-/** Fetch the raw vless list text from the remote source */
-export async function fetchVlessList(url = VLESS_LIST_URL): Promise<string[]> {
-  logger.info('Fetching vless list', { url });
+/**
+ * Fetch vless:// links from one or more sources, concatenate and de-duplicate.
+ * A failing source is logged and skipped (never aborts the whole run).
+ */
+export async function fetchVlessList(
+  urls: readonly string[] = DEFAULT_SOURCE_URLS
+): Promise<string[]> {
+  const seen = new Set<string>();
 
-  const text = await ky.get(url).text();
-  const lines = text
-    .split('\n')
-    .map(l => l.trim())
-    .filter(l => l.startsWith('vless://'));
+  for (const url of urls) {
+    try {
+      logger.info('Fetching vless list', { url });
+      const text = await ky.get(url, { timeout: 20_000 }).text();
+      let count = 0;
+      for (const line of text.split('\n')) {
+        const t = line.trim();
+        if (t.startsWith('vless://')) {
+          seen.add(t);
+          count += 1;
+        }
+      }
+      logger.info('Fetched vless list', { url, count });
+    } catch (err) {
+      logger.warn('Source fetch failed — skipping', { url, error: String(err) });
+    }
+  }
 
-  logger.info('Fetched vless list', { url, count: lines.length });
+  const lines = [...seen];
+  logger.info('Combined sources', { sources: urls.length, uniqueLinks: lines.length });
   return lines;
 }

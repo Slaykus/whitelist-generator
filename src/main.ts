@@ -1,4 +1,4 @@
-import { DISALLOWED_TYPES, env, subnetGroups, XRAY_BASE_CONFIG } from '@config';
+import { DEFAULT_SOURCE_URLS, DISALLOWED_TYPES, env, subnetGroups, XRAY_BASE_CONFIG } from '@config';
 import {
   fetchVlessList,
   filterByKnownSubnet,
@@ -49,7 +49,10 @@ async function buildAndSync(outbounds: XrayVlessOutbound[]): Promise<void> {
 
 /** Fetch the public list and build the full candidate outbound set */
 async function collectCandidates(): Promise<XrayVlessOutbound[]> {
-  const rawLines = await fetchVlessList();
+  const sources = env.SOURCE_URLS
+    ? env.SOURCE_URLS.split(',').map(u => u.trim()).filter(Boolean)
+    : DEFAULT_SOURCE_URLS;
+  const rawLines = await fetchVlessList(sources);
   const entries = parseVlessLines(rawLines);
   const filtered = filterByType(entries, DISALLOWED_TYPES);
   const matched = matchAllHosts(filtered, subnetGroups);
@@ -160,6 +163,7 @@ async function runFull(): Promise<void> {
         minOperators: env.BSBORD_MIN_OPERATORS,
         cacheTtlMs: env.BSBORD_CACHE_TTL_HOURS * 3_600_000,
         cachePath: env.BSBORD_CACHE_PATH,
+        minOkRatio: env.BSBORD_MIN_OK_RATIO,
       });
     }
 

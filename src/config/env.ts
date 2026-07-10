@@ -84,6 +84,10 @@ const envSchema = z
     BSBORD_CACHE_PATH: z.string().default('bsbord-cache.json'),
     /** Speed-test pool feeding the filter = TEST_TOP_N * this */
     BSBORD_OVERSAMPLE: z.coerce.number().int().min(1).default(3),
+    /** Min fraction of live operators a server must pass (1 = all, 0.9 = 90%) */
+    BSBORD_MIN_OK_RATIO: z.coerce.number().min(0).max(1).default(1),
+    /** Comma-separated list of source URLs (overrides DEFAULT_SOURCE_URLS) */
+    SOURCE_URLS: z.string().optional(),
   })
   .superRefine((data, ctx) => {
     if (!data.SYNC_ENABLED) return;
