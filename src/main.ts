@@ -24,6 +24,9 @@ import type {
 } from '@types';
 import { Cron } from 'croner';
 
+// When the last full run happened (in-memory) — used to throttle escalations.
+let lastFullRunAt = 0;
+
 /** In-place Fisher-Yates shuffle (returns a new array) so TEST_LIMIT samples
  * a different random subset of the pool each run instead of always the first N. */
 function shuffle<T>(arr: readonly T[]): T[] {
@@ -94,6 +97,7 @@ function passthroughResult(o: XrayVlessOutbound): SpeedTestResult {
  * TEST_TOP_N, persist the selection and sync. This is the heavy job.
  */
 async function runFull(): Promise<void> {
+  lastFullRunAt = Date.now();
   logger.info('Full run started', {
     remnawaveSync: env.SYNC_ENABLED,
     speedTest: env.TEST_ENABLED,
@@ -234,15 +238,32 @@ async function runLight(): Promise<void> {
       },
     }));
 
-  if (survivors.length === 0) {
-    logger.warn('All selected servers are down — keeping previous selection');
-    return;
-  }
-
   logger.info('Light re-check complete', {
     kept: survivors.length,
     dropped: prev.length - survivors.length,
   });
+
+  // Too few healthy servers → replenish immediately (throttled), instead of
+  // waiting for the next scheduled full run. This closes all-DOWN windows fast.
+  if (survivors.length < env.MIN_HEALTHY_POOL) {
+    const sinceFullMs = Date.now() - lastFullRunAt;
+    if (sinceFullMs >= env.FULL_COOLDOWN_MINUTES * 60_000) {
+      logger.warn('Healthy pool below floor — running full replenish now', {
+        healthy: survivors.length,
+        floor: env.MIN_HEALTHY_POOL,
+      });
+      return runFull();
+    }
+    logger.warn('Healthy pool low but full run on cooldown — keeping survivors', {
+      healthy: survivors.length,
+      cooldownLeftMin: Math.ceil((env.FULL_COOLDOWN_MINUTES * 60_000 - sinceFullMs) / 60_000),
+    });
+  }
+
+  if (survivors.length === 0) {
+    logger.warn('All selected servers are down — keeping previous selection');
+    return;
+  }
 
   await saveSelected(env.SELECTED_STATE_PATH, survivors);
   await buildAndSync(survivors.map(s => s.outbound));
