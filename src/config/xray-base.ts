@@ -115,7 +115,7 @@ export const XRAY_BASE_CONFIG: XrayConfig = {
   burstObservatory: {
     pingConfig: {
       timeout: '5s',
-      interval: '30m',
+      interval: '2m',
       sampling: 1,
       httpMethod: 'GET',
       destination: 'https://www.gstatic.com/generate_204',
