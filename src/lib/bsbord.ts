@@ -10,14 +10,15 @@ export interface BsbordOptions {
   minOperators: number;
   cacheTtlMs: number;
   cachePath: string;
-  /** Min fraction of live operators OK to count as universal (1 = all) */
-  minOkRatio: number;
+  /** Target number of servers covering each live operator */
+  perOperator: number;
+  /** Hard cap on the final selection */
+  maxTotal: number;
 }
 
 interface Verdict {
-  universal: boolean;
+  okOperators: string[];
   checkedAt: string;
-  operators: string[];
 }
 interface CacheFile {
   verdicts: Record<string, Verdict>;
@@ -65,11 +66,11 @@ async function aliveOperators(opts: BsbordOptions): Promise<string[]> {
     .map(o => o.op_key);
 }
 
-/** Probe up to 10 servers across operators; returns endpoint -> { op_key -> ok }. */
+/** Probe up to 10 servers across operators; returns endpoint -> list of ok op_keys. */
 async function probeBatch(
   batch: XrayVlessOutbound[],
   opts: BsbordOptions
-): Promise<Record<string, Record<string, boolean>>> {
+): Promise<Record<string, string[]>> {
   const sniHosts = [...new Set(batch.map(sniOf).filter((s): s is string => !!s))];
   const body = {
     targets: batch.map(endpoint),
@@ -90,22 +91,22 @@ async function probeBatch(
   const data = (await resp.json()) as {
     by_target?: Record<string, { by_operator?: Record<string, { ok?: boolean }> }>;
   };
-  const out: Record<string, Record<string, boolean>> = {};
+  const out: Record<string, string[]> = {};
   for (const [tgt, td] of Object.entries(data.by_target ?? {})) {
-    const perOp: Record<string, boolean> = {};
-    for (const [op, info] of Object.entries(td.by_operator ?? {})) {
-      perOp[op] = info.ok === true;
-    }
-    out[tgt] = perOp;
+    out[tgt] = Object.entries(td.by_operator ?? {})
+      .filter(([, info]) => info.ok === true)
+      .map(([op]) => op);
   }
   return out;
 }
 
 /**
- * Keep only servers reachable on ALL currently-live operators (tested through
- * real Russian operator modems). Verdicts are cached per endpoint for cacheTtlMs
- * so repeat runs don't re-pay. On any API trouble the input is passed through
- * unchanged (fail-open — never empty the pool because of a checker outage).
+ * Select servers for OPERATOR COVERAGE (tested through real Russian operator
+ * modems). Instead of demanding every server be universal (rare on public
+ * pools), we ensure each live operator is covered by several servers, mixing
+ * fully- and partially-working nodes, then fill up to maxTotal by speed.
+ * Verdicts are cached per endpoint. Fail-open on API trouble or too few live
+ * operators (returns the fastest servers unchanged — never empties the pool).
  */
 export async function filterUniversal(
   servers: SelectedServer[],
@@ -118,24 +119,26 @@ export async function filterUniversal(
     alive = await aliveOperators(opts);
   } catch (e) {
     logger.warn('bsbord: operators fetch failed — skipping filter', { error: String(e) });
-    return servers;
+    return servers.slice(0, opts.maxTotal);
   }
   if (alive.length < opts.minOperators) {
     logger.warn('bsbord: too few live operators — skipping filter', {
       alive: alive.length,
       need: opts.minOperators,
     });
-    return servers;
+    return servers.slice(0, opts.maxTotal);
   }
-  logger.info('bsbord: universality filter', {
+  logger.info('bsbord: coverage selection', {
     candidates: servers.length,
     liveOperators: alive.join(','),
+    perOperator: opts.perOperator,
+    maxTotal: opts.maxTotal,
   });
 
   const cache = await loadCache(opts.cachePath);
   const now = Date.now();
   const isFresh = (v?: Verdict): boolean =>
-    !!v && now - new Date(v.checkedAt).getTime() < opts.cacheTtlMs;
+    !!v && Array.isArray(v.okOperators) && now - new Date(v.checkedAt).getTime() < opts.cacheTtlMs;
 
   const toProbe = servers.filter(s => !isFresh(cache.verdicts[endpoint(s.outbound)]));
   logger.info('bsbord: cache state', {
@@ -145,7 +148,7 @@ export async function filterUniversal(
 
   for (let i = 0; i < toProbe.length; i += BATCH) {
     const batch = toProbe.slice(i, i + BATCH).map(s => s.outbound);
-    let res: Record<string, Record<string, boolean>>;
+    let res: Record<string, string[]>;
     try {
       res = await probeBatch(batch, opts);
     } catch (e) {
@@ -153,22 +156,56 @@ export async function filterUniversal(
       continue;
     }
     for (const o of batch) {
-      const perOp = res[endpoint(o)] ?? {};
-      const okCount = alive.filter(op => perOp[op] === true).length;
       cache.verdicts[endpoint(o)] = {
-        universal: alive.length > 0 && okCount / alive.length >= opts.minOkRatio,
+        okOperators: res[endpoint(o)] ?? [],
         checkedAt: new Date().toISOString(),
-        operators: alive,
       };
     }
     await Bun.write(opts.cachePath, JSON.stringify(cache, null, '\t'));
     if (i + BATCH < toProbe.length) await sleep(THROTTLE_MS);
   }
 
-  const survivors = servers.filter(s => cache.verdicts[endpoint(s.outbound)]?.universal);
-  logger.info('bsbord: filter complete', {
-    universal: survivors.length,
-    dropped: servers.length - survivors.length,
+  const okOps = (s: SelectedServer): string[] =>
+    cache.verdicts[endpoint(s.outbound)]?.okOperators ?? [];
+  // Eligible = alive on at least one real operator; `servers` is already speed-sorted.
+  const eligible = servers.filter(s => okOps(s).some(op => alive.includes(op)));
+
+  const selected: SelectedServer[] = [];
+  const chosen = new Set<string>();
+  // 1) Cover each operator with up to perOperator fastest servers.
+  for (const op of alive) {
+    let have = 0;
+    for (const s of eligible) {
+      if (have >= opts.perOperator) break;
+      const ep = endpoint(s.outbound);
+      if (chosen.has(ep)) {
+        if (okOps(s).includes(op)) have += 1;
+        continue;
+      }
+      if (okOps(s).includes(op)) {
+        selected.push(s);
+        chosen.add(ep);
+        have += 1;
+      }
+    }
+  }
+  // 2) Fill remaining slots with the fastest eligible servers.
+  for (const s of eligible) {
+    if (selected.length >= opts.maxTotal) break;
+    const ep = endpoint(s.outbound);
+    if (!chosen.has(ep)) {
+      selected.push(s);
+      chosen.add(ep);
+    }
+  }
+
+  const coverage = alive
+    .map(op => `${op}:${selected.filter(s => okOps(s).includes(op)).length}`)
+    .join(' ');
+  logger.info('bsbord: selection complete', {
+    selected: selected.length,
+    eligible: eligible.length,
+    coverage,
   });
-  return survivors;
+  return selected.slice(0, opts.maxTotal);
 }

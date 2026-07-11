@@ -174,7 +174,8 @@ async function runFull(): Promise<void> {
         minOperators: env.BSBORD_MIN_OPERATORS,
         cacheTtlMs: env.BSBORD_CACHE_TTL_HOURS * 3_600_000,
         cachePath: env.BSBORD_CACHE_PATH,
-        minOkRatio: env.BSBORD_MIN_OK_RATIO,
+        perOperator: env.BSBORD_MIN_PER_OP,
+        maxTotal: env.TEST_TOP_N,
       });
     }
 
