@@ -26,6 +26,8 @@ import { Cron } from 'croner';
 
 // When the last full run happened (in-memory) — used to throttle escalations.
 let lastFullRunAt = 0;
+// Consecutive full runs that came back below the floor — used to back off escalation.
+let dryRuns = 0;
 
 /** In-place Fisher-Yates shuffle (returns a new array) so TEST_LIMIT samples
  * a different random subset of the pool each run instead of always the first N. */
@@ -188,6 +190,8 @@ async function runFull(): Promise<void> {
     selected = candidates.map(o => ({ result: passthroughResult(o), outbound: o }));
   }
 
+  dryRuns = selected.length < env.MIN_HEALTHY_POOL ? Math.min(dryRuns + 1, 6) : 0;
+
   // Never push raw/unverified candidates. If nothing passed, keep whatever is
   // already live (the previous good selection) instead of shipping dead servers.
   if (selected.length === 0) {
@@ -246,17 +250,22 @@ async function runLight(): Promise<void> {
   // Too few healthy servers → replenish immediately (throttled), instead of
   // waiting for the next scheduled full run. This closes all-DOWN windows fast.
   if (survivors.length < env.MIN_HEALTHY_POOL) {
+    // Exponential backoff while the supply stays dry (avoid burning bsbord
+    // credits + load re-probing a dead pool every cooldown).
+    const cooldownMin = env.FULL_COOLDOWN_MINUTES * 2 ** Math.min(dryRuns, 4);
     const sinceFullMs = Date.now() - lastFullRunAt;
-    if (sinceFullMs >= env.FULL_COOLDOWN_MINUTES * 60_000) {
+    if (sinceFullMs >= cooldownMin * 60_000) {
       logger.warn('Healthy pool below floor — running full replenish now', {
         healthy: survivors.length,
         floor: env.MIN_HEALTHY_POOL,
+        dryRuns,
       });
       return runFull();
     }
     logger.warn('Healthy pool low but full run on cooldown — keeping survivors', {
       healthy: survivors.length,
-      cooldownLeftMin: Math.ceil((env.FULL_COOLDOWN_MINUTES * 60_000 - sinceFullMs) / 60_000),
+      cooldownMin,
+      cooldownLeftMin: Math.ceil((cooldownMin * 60_000 - sinceFullMs) / 60_000),
     });
   }
 

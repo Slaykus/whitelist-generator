@@ -11,7 +11,6 @@ export const VLESS_LIST_URL =
 export const DEFAULT_SOURCE_URLS: readonly string[] = [
   'https://raw.githubusercontent.com/zieng2/wl/main/vless_lite.txt',
   'https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/Vless-Reality-White-Lists-Rus-Mobile.txt',
-  'https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/Vless-Reality-White-Lists-Rus-Mobile-2.txt',
   // Meta-aggregator (many upstream sources, deduped, updated every minute).
   'https://raw.githubusercontent.com/solovyov-jenya2004/all_subs/main/final_sorted',
 ];
