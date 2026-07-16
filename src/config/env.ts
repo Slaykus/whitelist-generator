@@ -80,6 +80,13 @@ const envSchema = z
     /** Where to persist the currently selected servers between runs */
     SELECTED_STATE_PATH: z.string().default('selected.json'),
 
+    /** Keep re-testing recently-good servers even after they leave the feed */
+    RESERVOIR_ENABLED: bool(true),
+    RESERVOIR_PATH: z.string().default('reservoir.json'),
+    /** Drop a reservoir server if it hasn't passed within this window */
+    RESERVOIR_TTL_HOURS: z.coerce.number().min(1).default(72),
+    RESERVOIR_MAX: z.coerce.number().int().min(1).default(50),
+
     /** Enable bsbord operator-universality filter (needs BSBORD_API_KEY) */
     BSBORD_ENABLED: bool(false),
     BSBORD_API_KEY: z.string().optional(),

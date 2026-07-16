@@ -6,11 +6,14 @@ import {
   filterUniversal,
   generateMultiConfig,
   generateOutbounds,
+  loadReservoir,
+  type ReservoirEntry,
   loadSelected,
   logger,
   matchAllHosts,
   parseVlessLines,
   rankResults,
+  saveReservoir,
   saveSelected,
   syncConfig,
   testOutbounds,
@@ -26,6 +29,21 @@ import { Cron } from 'croner';
 
 // When the last full run happened (in-memory) — used to throttle escalations.
 let lastFullRunAt = 0;
+
+function endpointKey(o: XrayVlessOutbound): string {
+  const v = o.settings.vnext[0];
+  return `${v.address}:${v.port}`;
+}
+
+function dedupByEndpoint(list: XrayVlessOutbound[]): XrayVlessOutbound[] {
+  const seen = new Set<string>();
+  return list.filter(o => {
+    const k = endpointKey(o);
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
 // Consecutive full runs that came back below the floor — used to back off escalation.
 let dryRuns = 0;
 
@@ -81,14 +99,7 @@ async function collectCandidates(): Promise<XrayVlessOutbound[]> {
   // The public lists list the same server many times (different tags/ports).
   // De-dupe by address:port so we don't waste speed-tests/probes on copies and
   // counts reflect real unique servers.
-  const seen = new Set<string>();
-  const unique = outbounds.filter(o => {
-    const v = o.settings.vnext[0];
-    const ep = `${v.address}:${v.port}`;
-    if (seen.has(ep)) return false;
-    seen.add(ep);
-    return true;
-  });
+  const unique = dedupByEndpoint(outbounds);
   logger.info('Outbounds generated', { total: outbounds.length, unique: unique.length });
   return unique;
 }
@@ -118,7 +129,18 @@ async function runFull(escalated = false): Promise<void> {
     speedTest: env.TEST_ENABLED,
   });
 
-  const candidates = await collectCandidates();
+  let candidates = await collectCandidates();
+  let reservoir: ReservoirEntry[] = [];
+  if (env.RESERVOIR_ENABLED) {
+    reservoir = await loadReservoir(env.RESERVOIR_PATH);
+    if (reservoir.length > 0) {
+      candidates = dedupByEndpoint([...candidates, ...reservoir.map(r => r.outbound)]);
+      logger.info('Reservoir merged', {
+        reservoir: reservoir.length,
+        candidates: candidates.length,
+      });
+    }
+  }
   let selected: SelectedServer[];
 
   if (env.TEST_ENABLED) {
@@ -186,6 +208,9 @@ async function runFull(escalated = false): Promise<void> {
       })
       .filter((s): s is SelectedServer => s !== null);
 
+    // Servers that connect AND pass the bypass check — remembered in the reservoir.
+    const workingServers = fastPool;
+
     // Keep only servers that work across all live Russian operators (bsbord).
     if (env.BSBORD_ENABLED && env.BSBORD_API_KEY && !escalated) {
       fastPool = await filterUniversal(fastPool, {
@@ -201,6 +226,23 @@ async function runFull(escalated = false): Promise<void> {
     }
 
     selected = fastPool.slice(0, env.TEST_TOP_N);
+
+    if (env.RESERVOIR_ENABLED) {
+      const now = new Date().toISOString();
+      const byEp = new Map<string, ReservoirEntry>(
+        reservoir.map(r => [endpointKey(r.outbound), r])
+      );
+      for (const s of workingServers) {
+        byEp.set(endpointKey(s.outbound), { outbound: s.outbound, lastGoodAt: now });
+      }
+      const ttlMs = env.RESERVOIR_TTL_HOURS * 3_600_000;
+      const kept = [...byEp.values()]
+        .filter(r => Date.now() - new Date(r.lastGoodAt).getTime() < ttlMs)
+        .sort((a, b) => (a.lastGoodAt < b.lastGoodAt ? 1 : -1))
+        .slice(0, env.RESERVOIR_MAX);
+      await saveReservoir(env.RESERVOIR_PATH, kept);
+      logger.info('Reservoir updated', { good: workingServers.length, size: kept.length });
+    }
   } else {
     selected = candidates.map(o => ({ result: passthroughResult(o), outbound: o }));
   }
