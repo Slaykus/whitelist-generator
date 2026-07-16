@@ -33,7 +33,7 @@ const envSchema = z
     FULL_TEST_CRON: z.string().default('0 */3 * * *'),
 
     /** If the healthy pool drops below this on a light check, replenish now */
-    MIN_HEALTHY_POOL: z.coerce.number().int().min(0).default(5),
+    MIN_HEALTHY_POOL: z.coerce.number().int().min(0).default(3),
     /** Min minutes between escalated full runs (avoid thrashing) */
     FULL_COOLDOWN_MINUTES: z.coerce.number().int().min(0).default(20),
 

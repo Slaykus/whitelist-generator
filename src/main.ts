@@ -98,7 +98,7 @@ function passthroughResult(o: XrayVlessOutbound): SpeedTestResult {
  * FULL pass: fetch, (speed-)test every candidate, rank, keep the fastest
  * TEST_TOP_N, persist the selection and sync. This is the heavy job.
  */
-async function runFull(): Promise<void> {
+async function runFull(escalated = false): Promise<void> {
   lastFullRunAt = Date.now();
   logger.info('Full run started', {
     remnawaveSync: env.SYNC_ENABLED,
@@ -172,7 +172,7 @@ async function runFull(): Promise<void> {
       .filter((s): s is SelectedServer => s !== null);
 
     // Keep only servers that work across all live Russian operators (bsbord).
-    if (env.BSBORD_ENABLED && env.BSBORD_API_KEY) {
+    if (env.BSBORD_ENABLED && env.BSBORD_API_KEY && !escalated) {
       fastPool = await filterUniversal(fastPool, {
         apiUrl: env.BSBORD_API_URL,
         apiKey: env.BSBORD_API_KEY,
@@ -260,7 +260,7 @@ async function runLight(): Promise<void> {
         floor: env.MIN_HEALTHY_POOL,
         dryRuns,
       });
-      return runFull();
+      return runFull(true);
     }
     logger.warn('Healthy pool low but full run on cooldown — keeping survivors', {
       healthy: survivors.length,
