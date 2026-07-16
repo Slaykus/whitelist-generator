@@ -77,8 +77,20 @@ async function collectCandidates(): Promise<XrayVlessOutbound[]> {
 
   const groupOrder = subnetGroups.map(g => g.balancerTag);
   const outbounds = generateOutbounds(results, groupOrder);
-  logger.info('Outbounds generated', { count: outbounds.length });
-  return outbounds;
+
+  // The public lists list the same server many times (different tags/ports).
+  // De-dupe by address:port so we don't waste speed-tests/probes on copies and
+  // counts reflect real unique servers.
+  const seen = new Set<string>();
+  const unique = outbounds.filter(o => {
+    const v = o.settings.vnext[0];
+    const ep = `${v.address}:${v.port}`;
+    if (seen.has(ep)) return false;
+    seen.add(ep);
+    return true;
+  });
+  logger.info('Outbounds generated', { total: outbounds.length, unique: unique.length });
+  return unique;
 }
 
 /** Synthetic "passed" result for the no-test / fallback paths */
