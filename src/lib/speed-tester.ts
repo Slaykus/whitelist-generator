@@ -16,6 +16,10 @@ export interface TesterOptions {
   timeoutMs: number;
   /** Measure download throughput too (false = availability + latency only) */
   measureSpeed?: boolean;
+  /** Blocked-in-RU URLs that must be reachable through the proxy (real bypass) */
+  checkUrls: string[];
+  /** Per-check timeout in ms for the bypass URLs */
+  checkTimeoutMs?: number;
 }
 
 interface CurlResult {
@@ -58,8 +62,26 @@ async function measure(
     return { available: false, latencyMs };
   }
 
-  if (opts.measureSpeed === false) {
-    return { available: true, latencyMs, speedBytesPerSec: 0, downloadedBytes: 0 };
+  // Censorship-bypass check: the server must reach sites blocked in Russia
+  // (Telegram, YouTube). A TSPU-restricted egress passes gstatic/cloudflare but
+  // fails these — reject it even if it is fast.
+  let bypassOk = true;
+  if (opts.checkUrls.length > 0) {
+    const checkSec = Math.max(1, Math.ceil((opts.checkTimeoutMs ?? 8000) / 1000));
+    for (const url of opts.checkUrls) {
+      const chk = await curlThroughProxy([
+        '-s', '-o', '/dev/null', '-x', proxy,
+        '-w', '%{http_code}', '--max-time', String(checkSec), url,
+      ]);
+      if (!chk.ok || Number(chk.out) === 0) {
+        bypassOk = false;
+        break;
+      }
+    }
+  }
+
+  if (!bypassOk || opts.measureSpeed === false) {
+    return { available: true, bypassOk, latencyMs, speedBytesPerSec: 0, downloadedBytes: 0 };
   }
 
   const spd = await curlThroughProxy([
@@ -78,7 +100,7 @@ async function measure(
     downloadedBytes = Number(sz);
   }
 
-  return { available: true, latencyMs, speedBytesPerSec, downloadedBytes };
+  return { available: true, bypassOk, latencyMs, speedBytesPerSec, downloadedBytes };
 }
 
 /**
@@ -106,6 +128,7 @@ export async function testOutbounds(
         address: vnext.address,
         port: vnext.port,
         available: false,
+        bypassOk: false,
         latencyMs: -1,
         speedBytesPerSec: 0,
         downloadedBytes: 0,
@@ -126,6 +149,7 @@ export async function testOutbounds(
           tag: result.tag,
           address: result.address,
           available: result.available,
+          bypassOk: result.bypassOk,
           latencyMs: result.latencyMs,
           mbps: Number(toMbps(result.speedBytesPerSec).toFixed(1)),
         });

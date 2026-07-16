@@ -24,6 +24,7 @@ export function rankResults(
 ): SpeedTestResult[] {
   const passing = results.filter(r => {
     if (!r.available) return false;
+    if (!r.bypassOk) return false;
     if (opts.maxLatencyMs > 0 && r.latencyMs > opts.maxLatencyMs) return false;
     if (opts.minSpeedMbps > 0 && toMbps(r.speedBytesPerSec) < opts.minSpeedMbps) {
       return false;

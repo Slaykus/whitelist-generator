@@ -71,6 +71,10 @@ const envSchema = z
     XRAY_BIN: z.string().default('xray'),
 
     /** Where to write the full ranked test report */
+    TEST_CHECK_URLS: z
+      .string()
+      .default('https://api.telegram.org,https://www.youtube.com'),
+    TEST_CHECK_TIMEOUT_MS: z.coerce.number().int().min(1000).default(8000),
     TEST_RESULTS_PATH: z.string().default('tested-results.json'),
 
     /** Where to persist the currently selected servers between runs */

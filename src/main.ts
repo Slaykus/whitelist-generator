@@ -88,6 +88,7 @@ function passthroughResult(o: XrayVlessOutbound): SpeedTestResult {
     address: o.settings.vnext[0].address,
     port: o.settings.vnext[0].port,
     available: true,
+    bypassOk: true,
     latencyMs: -1,
     speedBytesPerSec: 0,
     downloadedBytes: 0,
@@ -125,6 +126,8 @@ async function runFull(escalated = false): Promise<void> {
       downloadUrl: env.TEST_DOWNLOAD_URL,
       timeoutMs: env.TEST_TIMEOUT_MS,
       measureSpeed: true,
+      checkUrls: env.TEST_CHECK_URLS.split(',').map(u => u.trim()).filter(Boolean),
+      checkTimeoutMs: env.TEST_CHECK_TIMEOUT_MS,
     });
 
     const sorted = [...results].sort(
@@ -227,12 +230,14 @@ async function runLight(): Promise<void> {
       downloadUrl: env.TEST_DOWNLOAD_URL,
       timeoutMs: env.TEST_TIMEOUT_MS,
       measureSpeed: false,
+      checkUrls: env.TEST_CHECK_URLS.split(',').map(u => u.trim()).filter(Boolean),
+      checkTimeoutMs: env.TEST_CHECK_TIMEOUT_MS,
     }
   );
   const status = new Map(results.map(r => [r.tag, r]));
 
   const survivors = prev
-    .filter(s => status.get(s.outbound.tag)?.available)
+    .filter(s => status.get(s.outbound.tag)?.available && status.get(s.outbound.tag)?.bypassOk)
     .map(s => ({
       outbound: s.outbound,
       result: {

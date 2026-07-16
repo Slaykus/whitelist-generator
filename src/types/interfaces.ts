@@ -55,6 +55,8 @@ export interface SpeedTestResult {
   port: number;
   /** Whether the server responded successfully through the proxy */
   available: boolean;
+  /** Reaches sites blocked in RU (Telegram/YouTube) through the proxy — real bypass */
+  bypassOk: boolean;
   /** Time-to-first-byte in ms through the proxy; -1 if not measured */
   latencyMs: number;
   /** Download throughput in bytes/sec; 0 if not measured */
